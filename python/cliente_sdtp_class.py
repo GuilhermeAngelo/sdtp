@@ -1,4 +1,3 @@
-
 import socket
 
 # importando as constantes e funcoes de sdtp.py
