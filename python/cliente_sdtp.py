@@ -9,9 +9,8 @@ START = 0
 
 from sdtp import *
 #from sdtp.python.sdtp import *
+
 state = 0
-
-
 
 def mk_packet(seqnum, acknum, flags, window, data = ""):
     pout = SDTPPacket()
@@ -26,7 +25,7 @@ def mk_packet(seqnum, acknum, flags, window, data = ""):
     return pout
 
 def send_packet(socket, pout):
-    socket.sendto(pout.to_struct(), (IP,PORTA))
+    socket.sendto(pout.to_struct(), (IP, PORTA))
 
 while(True):
 
@@ -52,7 +51,7 @@ while(True):
 
         if (response == -2):
             print("Erro de timeout - reenviar o pacote")
-            s.sendto(pout.to_struct(), (IP, PORTA))
+            send_packet(s,pout)
 
         else:
             print("Pacote recebido:")
@@ -78,12 +77,13 @@ while(True):
         data_len = START
         ack_num = START
 
-        seqnum = randint(0,10000)
+        seqnum = 0
         
         with open(file_name,'r') as file:
-            
-            while(comulative_send < 510):
-                pos = file.seek(comulative_send)
+
+            while(comulative_send < FILE_LEN):
+
+                file.seek(comulative_send)
 
                 if pout.seqnum + len(pout.data) > expected_ack:
                     expected_ack = pout.seqnum + len(pout.data) + 1
@@ -91,36 +91,40 @@ while(True):
                 if (pin.window >= (FILE_LEN - comulative_send)):
                     dif = FILE_LEN - comulative_send
                     pos = file.seek(dif)
-                    pout = mk_packet(pin.acknum + 1, 0,0x0, 0, file.read(pin.window))
-
+                    pout = mk_packet(pin.acknum + 1, pin.acknum + len(file.read(255)), 0x0, 0, file.read(dif))
+                    send_packet(s, pout)
                 else:
+
                     pout = SDTPPacket()
-                    pout.seqnum = seqnum
-                    pout.acknum = 0
+                    pout.seqnum = seqnum 
                     pout.flags = 0x0
-                    data_len = len(pout.data)
-                    pout.data = file.read(255)
+                    pout.data = file.read(pin.window)
+                    pout.datalen = int(len(pout.data))
+                    pout.acknum = pout.datalen + seqnum 
                     pout.checksum = compute_checksum(pout.to_struct())
+ 
+                    
+                    send_packet(s,pout)
 
-                print("Pacote enviado após a conexão:")
-                print(pout.data)
+                    print("Pacote enviado:")
+                    pout.print()
 
-                send_packet(s, pout)
+                    
+                if(response == -1 or response == -2):
+                    print("O pacote foi perdido - renviar o pacote")
+                    send_packet(s, pout)
+                    
 
+                if (pin.flags == TH_ACK) and (response != -2 and response != -1) and compute_checksum(pin.to_struct()) == pin.checksum and pin.window <= 255:
+                    print('pacote recebido é uma ack sem erros')
+                    pin.print()
+
+                    comulative_send += pout.datalen + 1
+                    seqnum += pin.acknum + 1
+                    
                 response = recvtimeout(s, 2000)
                 pin = SDTPPacket()
                 pin.from_struct(response)
-                
-                if(pin == -1 or pin == -2):
-                    print("O pacote foi perdido - renviar o pacote")
-                    send_packet(s, pout)
-
-                if (pin.flags == TH_ACK) and (response != -2 and response != -1) :
-                    print('pacote recebido:')
-                    pin.print()
-                    seqnum += (pout.datalen + 1)
-                    comulative_send += pin.window
-        
         state = 3        
             
     if state == 3:
