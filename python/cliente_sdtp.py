@@ -125,6 +125,7 @@ while(True):
                 response = recvtimeout(s, 2000)
                 pin = SDTPPacket()
                 pin.from_struct(response)
+        
         state = 3        
             
     if state == 3:
