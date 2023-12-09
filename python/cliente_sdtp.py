@@ -94,8 +94,7 @@ while(True):
                     pout.seqnum = seqnum 
                     pout.flags = 0x0
                     pout.data = file.read(pin.window)
-                    pout.datalen = int(len(pout.data))
-                    pout.acknum = pout.datalen + seqnum 
+                    pout.datalen = len(pout.data)
                     pout.checksum = compute_checksum(pout.to_struct())    
                     send_packet(s,pout)
                     print("Pacote enviado:")
@@ -110,7 +109,6 @@ while(True):
                     pout.flags = 0x0
                     pout.data = file.read(pin.window)
                     pout.datalen = len(pout.data)
-                    pout.acknum = pout.datalen + seqnum 
                     pout.checksum = compute_checksum(pout.to_struct())
                     send_packet(s, pout)
                 else:
