@@ -85,54 +85,66 @@ while(True):
 
                 file.seek(comulative_send)
 
-                if pout.seqnum + len(pout.data) > expected_ack:
-                    expected_ack = pout.seqnum + len(pout.data) + 1
-
                 if (pin.window >= (FILE_LEN - comulative_send)):
-                    dif = FILE_LEN - comulative_send
-                    pos = file.seek(dif)
-                    pout = mk_packet(pin.acknum + 1, pin.acknum + len(file.read(255)), 0x0, 0, file.read(dif))
-                    send_packet(s, pout)
-                else:
-
+                     dif = FILE_LEN - comulative_send
+                     pout = mk_packet(pin.acknum + 1, pin.acknum + len(file.read(dif)), 0x0, 0, file.read(dif))
+                     send_packet(s, pout)
+                else:       
                     pout = SDTPPacket()
                     pout.seqnum = seqnum 
                     pout.flags = 0x0
                     pout.data = file.read(pin.window)
                     pout.datalen = int(len(pout.data))
                     pout.acknum = pout.datalen + seqnum 
-                    pout.checksum = compute_checksum(pout.to_struct())
- 
-                    
+                    pout.checksum = compute_checksum(pout.to_struct())    
                     send_packet(s,pout)
-
                     print("Pacote enviado:")
                     pout.print()
 
-                    
-                if(response == -1 or response == -2):
-                    print("O pacote foi perdido - renviar o pacote")
-                    send_packet(s, pout)
-                    
-
-                if (pin.flags == TH_ACK) and (response != -2 and response != -1) and compute_checksum(pin.to_struct()) == pin.checksum and pin.window <= 255:
-                    print('pacote recebido é uma ack sem erros')
-                    pin.print()
-
-                    comulative_send += pout.datalen + 1
-                    seqnum += pin.acknum + 1
-                    
                 response = recvtimeout(s, 2000)
-                pin = SDTPPacket()
-                pin.from_struct(response)
+                
+                if response == -1 or response == -2:
+                    print("O pacote foi perdido - renviar o pacote")
+                    pout = SDTPPacket()
+                    pout.seqnum = seqnum 
+                    pout.flags = 0x0
+                    pout.data = file.read(pin.window)
+                    pout.datalen = len(pout.data)
+                    pout.acknum = pout.datalen + seqnum 
+                    pout.checksum = compute_checksum(pout.to_struct())
+                    send_packet(s, pout)
+                else:
+                    pin = SDTPPacket()
+                    pin.from_struct(response)
+
+                    if (pin.flags == TH_ACK) and (pin.window <= 255) and (compute_checksum(pin.to_struct()) == pin.checksum):
+                        print('pacote recebido é uma ack sem erros')
+                        pin.print()
+                        comulative_send += pout.datalen + 1
+                        seqnum += pin.acknum + 1
+
+                # if pout.seqnum + len(pout.data) > expected_ack:
+                #     expected_ack = pout.seqnum + len(pout.data) + 1
+                    
         
         state = 3        
             
     if state == 3:
-        print("Deu certo")
-        state = 4
-    
-    if state == 4:
-        break                            
+        pout = SDTPPacket()
+        pout.flags = TH_FIN
+        send_packet(s,pout)
+        
+        response = recvtimeout(s,2000)
+
+        if response == -1 or response == -2:
+            send_packet(s,pout)
+        else: 
+            pin = SDTPPacket()
+            pin.from_struct(response)
+
+            if pin.flags == TH_RST and (compute_checksum(pin.to_struct())== pin.checksum):
+                print("Finalizado com Sucesso!")
+                break
+
 # references: 
 # 1. https://wiki.python.org/moin/UdpCommunication
