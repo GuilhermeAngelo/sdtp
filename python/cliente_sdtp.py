@@ -16,10 +16,10 @@ def mk_packet(seqnum, acknum, flags, window, data = ""):
     pout = SDTPPacket()
     pout.seqnum = seqnum
     pout.acknum = acknum
-    pout.datalen = len(data)
+    pout.data = data
+    pout.datalen = len(pout.data)
     pout.flags = flags
     pout.window = window
-    pout.data = data
     pout.checksum = compute_checksum(pout.to_struct())
     
     return pout
@@ -72,31 +72,35 @@ while(True):
 
     if(state == 2):
         
-        comulative_send = START
         expected_ack = START
         data_len = START
         ack_num = START
-
-        seqnum = 0
+        seqnum = START
         
         with open(file_name,'r') as file:
 
-            while(comulative_send < FILE_LEN):
+            while(ack_num < FILE_LEN):
 
-                file.seek(comulative_send)
+                file.seek(ack_num)
 
-                if (pin.window >= (FILE_LEN - comulative_send)):
-                     dif = FILE_LEN - comulative_send
-                     pout = mk_packet(pin.acknum + 1, pin.acknum + len(file.read(dif)), 0x0, 0, file.read(dif))
+                if (pin.window >= (FILE_LEN - ack_num)):
+                     dif = FILE_LEN - ack_num
+                     pout = mk_packet(seqnum=pin.acknum, flags=0x0, window=0, data=file.read(dif),acknum=0)
                      send_packet(s, pout)
-                else:       
+                else:     
+                    
+                    window = pin.window
+                    
+                    if window > 255:
+                        window = 255
+
                     pout = SDTPPacket()
                     pout.seqnum = seqnum 
                     pout.flags = 0x0
-                    pout.data = file.read(pin.window)
+                    pout.data = file.read(window)
                     pout.datalen = len(pout.data)
                     pout.checksum = compute_checksum(pout.to_struct())    
-                    send_packet(s,pout)
+                    send_packet(s, pout)
                     print("Pacote enviado:")
                     pout.print()
 
@@ -107,7 +111,7 @@ while(True):
                     pout = SDTPPacket()
                     pout.seqnum = seqnum 
                     pout.flags = 0x0
-                    pout.data = file.read(pin.window)
+                    pout.data = file.read(window)
                     pout.datalen = len(pout.data)
                     pout.checksum = compute_checksum(pout.to_struct())
                     send_packet(s, pout)
@@ -115,16 +119,31 @@ while(True):
                     pin = SDTPPacket()
                     pin.from_struct(response)
 
-                    if (pin.flags == TH_ACK) and (pin.window <= 255) and (compute_checksum(pin.to_struct()) == pin.checksum):
+                    if pin.acknum < expected_ack:
+
+                        file.seek(pin.acknum)
+
+                        pout = SDTPPacket()
+                        pout.seqnum = pin.acknum
+                        pout.data = file.read(window)
+                        pout.datalen = len(pout.data)
+                        
+                        s.sendto(pout.to_struct(), (IP, PORTA))
+                        
+                        expected_ack = seqnum + pout.datalen
+                        ack_num = pin.acknum
+                        seqnum = pin.acknum
+
+                    if (pin.flags == TH_ACK) and (window <= 255) and (compute_checksum(pin.to_struct()) == pin.checksum):
                         print('pacote recebido é uma ack sem erros')
                         pin.print()
-                        comulative_send += pout.datalen + 1
-                        seqnum += pin.acknum + 1
+                        ack_num = pin.acknum
+                        seqnum = pin.acknum
 
-                # if pout.seqnum + len(pout.data) > expected_ack:
-                #     expected_ack = pout.seqnum + len(pout.data) + 1
-                    
-        
+
+                if pout.seqnum + len(pout.data) > expected_ack:
+                    expected_ack = pout.seqnum + len(pout.data)
+   
         state = 3        
             
     if state == 3:
