@@ -1,7 +1,5 @@
 import socket
 from os import stat
-from random import randint
-from time import sleep
 
 # importando as constantes e funcoes de sdtp.py
 file_name = 'lorem_ipsum.txt'
@@ -155,7 +153,5 @@ while(True):
 
             if pin.flags == TH_RST and (compute_checksum(pin.to_struct())== pin.checksum):
                 print("Finalizado com Sucesso!")
-                break
-
-# references: 
-# 1. https://wiki.python.org/moin/UdpCommunication
+                
+                break # Finalizando com estilo
