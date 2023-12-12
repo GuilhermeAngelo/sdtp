@@ -1,6 +1,7 @@
 import socket
 from os import stat
 from random import randint
+from time import sleep
 
 # importando as constantes e funcoes de sdtp.py
 file_name = 'lorem_ipsum.txt'
@@ -76,30 +77,35 @@ while(True):
         data_len = START
         ack_num = START
         seqnum = START
-        
+        window = pin.window
+
         with open(file_name,'r') as file:
 
-            while(ack_num < FILE_LEN):
+            while(ack_num <= FILE_LEN - 1):
 
                 file.seek(ack_num)
 
-                if (pin.window >= (FILE_LEN - ack_num)):
-                     dif = FILE_LEN - ack_num
-                     pout = mk_packet(seqnum=pin.acknum, flags=0x0, window=0, data=file.read(dif),acknum=0)
-                     send_packet(s, pout)
-                else:     
-                    
-                    window = pin.window
-                    
-                    if window > 255:
-                        window = 255
-
-                    pout = SDTPPacket()
-                    pout.seqnum = seqnum 
-                    pout.flags = 0x0
-                    pout.data = file.read(window)
+                if (pin.window > (FILE_LEN - ack_num) and pin.window <= 255):
+                    pout = SDTPPacket()    
+                    dif = FILE_LEN - ack_num
+                    pout.seqnum = pin.acknum
+                    pout.data = file.read(dif)
                     pout.datalen = len(pout.data)
-                    pout.checksum = compute_checksum(pout.to_struct())    
+
+                    send_packet(s, pout)
+                    
+                else:
+                    if pin.window <= 255:     
+                        pout = SDTPPacket()
+                        pout.seqnum = seqnum 
+                        pout.flags = 0x0
+                        pout.data = file.read(window)
+                        pout.datalen = len(pout.data)
+                        pout.checksum = compute_checksum(pout.to_struct())
+
+                    if pout.seqnum + len(pout.data) > expected_ack:
+                        expected_ack = pout.seqnum + len(pout.data)
+
                     send_packet(s, pout)
                     print("Pacote enviado:")
                     pout.print()
@@ -107,44 +113,32 @@ while(True):
                 response = recvtimeout(s, 2000)
                 
                 if response == -1 or response == -2:
-                    print("O pacote foi perdido - renviar o pacote")
-                    pout = SDTPPacket()
-                    pout.seqnum = seqnum 
-                    pout.flags = 0x0
-                    pout.data = file.read(window)
-                    pout.datalen = len(pout.data)
-                    pout.checksum = compute_checksum(pout.to_struct())
-                    send_packet(s, pout)
+                    if pin.window <= 255:
+                        print("O pacote foi perdido - renviar o pacote")
+                        pout = SDTPPacket()
+                        pout.seqnum = seqnum 
+                        pout.flags = 0x0
+                        pout.data = file.read(window)
+                        pout.datalen = len(pout.data)
+                        pout.checksum = compute_checksum(pout.to_struct())
+                        send_packet(s, pout)
                 else:
                     pin = SDTPPacket()
                     pin.from_struct(response)
-
-                    if pin.acknum < expected_ack:
-
-                        file.seek(pin.acknum)
-
-                        pout = SDTPPacket()
-                        pout.seqnum = pin.acknum
-                        pout.data = file.read(window)
-                        pout.datalen = len(pout.data)
                         
-                        s.sendto(pout.to_struct(), (IP, PORTA))
-                        
-                        expected_ack = seqnum + pout.datalen
-                        ack_num = pin.acknum
-                        seqnum = pin.acknum
+                    if ((pin.flags == TH_ACK) and
+                        (pin.window <= 255) and 
+                        (compute_checksum(pin.to_struct()) == pin.checksum) and
+                        (pin.acknum <= expected_ack)
+                        ):
 
-                    if (pin.flags == TH_ACK) and (window <= 255) and (compute_checksum(pin.to_struct()) == pin.checksum):
                         print('pacote recebido é uma ack sem erros')
                         pin.print()
+
+                        window = pin.window
                         ack_num = pin.acknum
                         seqnum = pin.acknum
-
-
-                if pout.seqnum + len(pout.data) > expected_ack:
-                    expected_ack = pout.seqnum + len(pout.data)
-   
-        state = 3        
+            state = 3        
             
     if state == 3:
         pout = SDTPPacket()
